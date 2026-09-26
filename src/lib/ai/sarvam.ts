@@ -72,7 +72,11 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error(`LLM returned empty or invalid content: ${JSON.stringify(data)}`);
+    }
     
     // Parse JSON safely
     const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -117,7 +121,11 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    const content = data.choices?.[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error(`LLM returned empty or invalid content: ${JSON.stringify(data)}`);
+    }
     
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     const jsonString = jsonMatch ? jsonMatch[0] : content;
