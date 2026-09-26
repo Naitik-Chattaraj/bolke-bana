@@ -61,7 +61,7 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
           { role: "user", content: `Please generate the JSON specification for this request: "${transcript}"` }
         ],
         temperature: 0.1,
-        // Require JSON response format if supported, else rely on prompt
+        max_tokens: 4096
       }),
     });
 
@@ -72,7 +72,12 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    let content = data.choices?.[0]?.message?.content;
+    const reasoning = data.choices?.[0]?.message?.reasoning_content;
+    
+    if (!content && reasoning) {
+      content = reasoning; // Fallback to reasoning_content if content is empty
+    }
     
     if (!content) {
       throw new Error(`LLM returned empty or invalid content: ${JSON.stringify(data)}`);
@@ -82,8 +87,27 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     const jsonString = jsonMatch ? jsonMatch[0] : content;
     
-    const parsed = JSON.parse(jsonString);
-    return AppSpecSchema.parse(parsed);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonString);
+    } catch (e) {
+      console.error("JSON parse failed:", e);
+      return fallbackExtraction();
+    }
+    
+    const validationResult = AppSpecSchema.safeParse(parsed);
+    if (!validationResult.success) {
+      console.warn("Zod validation failed, but returning raw parsed JSON anyway:", validationResult.error);
+    }
+    
+    // Ensure critical structures exist to prevent frontend crash
+    parsed.project = parsed.project || { name: "App", description: "", targetUsers: [], problem: "" };
+    parsed.pages = parsed.pages || [];
+    parsed.features = parsed.features || [];
+    parsed.entities = parsed.entities || [];
+    parsed.navigation = parsed.navigation || [];
+    
+    return parsed as AppSpec;
   } catch (error: any) {
     console.error("Extraction error:", error);
     console.warn("Falling back to dummy extraction due to API error.");
@@ -112,6 +136,7 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
           { role: "user", content: `CURRENT SPECIFICATION:\n${JSON.stringify(currentSpec)}\n\nINSTRUCTION:\n${instruction}` }
         ],
         temperature: 0.1,
+        max_tokens: 4096
       }),
     });
 
@@ -122,7 +147,12 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    let content = data.choices?.[0]?.message?.content;
+    const reasoning = data.choices?.[0]?.message?.reasoning_content;
+    
+    if (!content && reasoning) {
+      content = reasoning; // Fallback to reasoning_content if content is empty
+    }
     
     if (!content) {
       throw new Error(`LLM returned empty or invalid content: ${JSON.stringify(data)}`);
@@ -131,8 +161,26 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     const jsonString = jsonMatch ? jsonMatch[0] : content;
     
-    const parsed = JSON.parse(jsonString);
-    return AppSpecSchema.parse(parsed);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonString);
+    } catch (e) {
+      console.error("JSON parse failed in modification:", e);
+      return fallbackModification(currentSpec, instruction);
+    }
+    
+    const validationResult = AppSpecSchema.safeParse(parsed);
+    if (!validationResult.success) {
+      console.warn("Zod validation failed in modification, returning raw parsed JSON:", validationResult.error);
+    }
+    
+    parsed.project = parsed.project || currentSpec.project;
+    parsed.pages = parsed.pages || currentSpec.pages;
+    parsed.features = parsed.features || currentSpec.features;
+    parsed.entities = parsed.entities || currentSpec.entities;
+    parsed.navigation = parsed.navigation || currentSpec.navigation;
+    
+    return parsed as AppSpec;
   } catch (error: any) {
     console.error("Modification error:", error);
     console.warn("Falling back to dummy modification due to API error.");
