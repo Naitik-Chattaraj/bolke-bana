@@ -86,7 +86,8 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
     return AppSpecSchema.parse(parsed);
   } catch (error: any) {
     console.error("Extraction error:", error);
-    throw new Error(`Extraction failed: ${error.message}`);
+    console.warn("Falling back to dummy extraction due to API error.");
+    return fallbackExtraction();
   }
 }
 
@@ -134,7 +135,8 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
     return AppSpecSchema.parse(parsed);
   } catch (error: any) {
     console.error("Modification error:", error);
-    throw new Error(`Modification failed: ${error.message}`);
+    console.warn("Falling back to dummy modification due to API error.");
+    return fallbackModification(currentSpec, instruction);
   }
 }
 

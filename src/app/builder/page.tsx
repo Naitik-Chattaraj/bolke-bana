@@ -14,7 +14,8 @@ import {
   Square, 
   Loader2,
   History,
-  Plus
+  Plus,
+  Zap
 } from "lucide-react";
 import { useProjectStore } from "@/lib/store";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
@@ -383,6 +384,14 @@ export default function BuilderPage() {
                   <Send className="w-4 h-4" />
                 </button>
               </div>
+              <button 
+                onClick={() => handleProcessInstruction("Mujhe ek college attendance app banana hai jisme students login karein, subjects add karein, attendance percentage dikhe aur 80 percent se neeche warning aaye.")}
+                disabled={isProcessing || isRecording}
+                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center shadow-sm transition-all duration-300 disabled:opacity-50 bg-secondary text-secondary-foreground hover:bg-secondary/80 border"
+                title="Default Output"
+              >
+                <Zap className="w-5 h-5" />
+              </button>
               <button 
                 onClick={toggleRecording}
                 disabled={isProcessing}
