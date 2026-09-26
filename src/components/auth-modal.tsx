@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/contexts/auth-context';
 import { 
   X, 
@@ -34,8 +35,13 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
 
   const resetForm = () => {
     setEmail('');
@@ -102,8 +108,8 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       <div 
         className="w-full max-w-md bg-background border rounded-2xl shadow-2xl p-6 sm:p-8 relative overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
@@ -281,6 +287,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

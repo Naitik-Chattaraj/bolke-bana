@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/contexts/auth-context';
 import { AuthModal } from '@/components/auth-modal';
 import { useProjectStore } from '@/lib/store';
@@ -22,6 +23,11 @@ export function UserProfileMenu() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -132,9 +138,9 @@ export function UserProfileMenu() {
       />
 
       {/* Supabase Config Guidance Modal */}
-      {showConfigModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg bg-background border rounded-2xl p-6 shadow-2xl space-y-4">
+      {showConfigModal && mounted && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="w-full max-w-lg bg-background border rounded-2xl p-6 shadow-2xl space-y-4 relative">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-primary font-bold">
                 <Database className="w-5 h-5" />
@@ -176,7 +182,8 @@ export function UserProfileMenu() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
