@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Mic, ArrowRight, Zap, Globe, Layout, RefreshCw } from "lucide-react";
+import { UserProfileMenu } from "@/components/user-profile-menu";
 
 export default function LandingPage() {
   return (
@@ -12,13 +13,14 @@ export default function LandingPage() {
             </div>
             <span className="font-bold text-xl tracking-tight">Bolke Bana</span>
           </div>
-          <nav>
+          <nav className="flex items-center gap-4">
             <Link 
               href="/builder" 
-              className="text-sm font-medium hover:text-primary transition-colors"
+              className="text-sm font-medium hover:text-primary transition-colors hidden sm:inline"
             >
               Go to Builder
             </Link>
+            <UserProfileMenu />
           </nav>
         </div>
       </header>

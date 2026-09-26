@@ -9,34 +9,52 @@ import {
   Redo, 
   Download, 
   Play, 
-  Settings,
-  MessageSquare,
-  Layout,
-  Square,
-  Loader2
+  MessageSquare, 
+  Layout, 
+  Square, 
+  Loader2,
+  History,
+  Plus
 } from "lucide-react";
 import { useProjectStore } from "@/lib/store";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { LivePreview } from "@/components/live-preview";
 import { BlueprintPanel } from "@/components/blueprint-panel";
+import { UserProfileMenu } from "@/components/user-profile-menu";
+import { SessionSidebar } from "@/components/session-sidebar";
+import { useAuth } from "@/contexts/auth-context";
+import { 
+  createSession, 
+  saveChatMessage, 
+  updateSession, 
+  fetchSessionMessages 
+} from "@/lib/services/chat-service";
 
 export default function BuilderPage() {
+  const { user, isConfigured } = useAuth();
   const { 
     spec, 
     chatHistory, 
     addChatMessage, 
+    setChatHistory,
     updateSpec, 
     setSpec, 
     undo, 
-    redo,
-    historyIndex,
-    history,
-    isProcessing,
-    processingState,
-    setIsProcessing
+    redo, 
+    historyIndex, 
+    history, 
+    isProcessing, 
+    processingState, 
+    setIsProcessing,
+    activeSessionId,
+    setActiveSessionId,
+    addSession,
+    updateSessionInList,
+    startNewSession
   } = useProjectStore();
   
   const [inputText, setInputText] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isRecording, recordingTime, startRecording, stopRecording } = useAudioRecorder();
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
@@ -50,10 +68,32 @@ export default function BuilderPage() {
   const handleProcessInstruction = async (text: string) => {
     if (!text.trim()) return;
     
-    // Add user message
-    addChatMessage({ role: "user", content: text });
+    // Add user message to UI state immediately
+    const userMsg = addChatMessage({ role: "user", content: text });
     
     setIsProcessing(true, "Understanding...");
+
+    // Persist to Supabase if user is logged in
+    let currentSessionId = activeSessionId;
+    if (user && isConfigured) {
+      try {
+        if (!currentSessionId) {
+          const sessionTitle = text.length > 35 ? text.slice(0, 35) + "..." : text;
+          const newSession = await createSession(user.id, sessionTitle, spec);
+          if (newSession) {
+            currentSessionId = newSession.id;
+            setActiveSessionId(newSession.id);
+            addSession(newSession);
+          }
+        }
+
+        if (currentSessionId) {
+          await saveChatMessage(currentSessionId, user.id, "user", text);
+        }
+      } catch (err) {
+        console.error("Failed to persist user message:", err);
+      }
+    }
     
     try {
       if (!spec) {
@@ -69,7 +109,22 @@ export default function BuilderPage() {
         
         const data = await response.json();
         setSpec(data.spec);
-        addChatMessage({ role: "assistant", content: "Your application blueprint is ready." });
+        const assistantText = "Your application blueprint is ready.";
+        addChatMessage({ role: "assistant", content: assistantText });
+
+        // Save assistant response and new spec to Supabase
+        if (user && isConfigured && currentSessionId) {
+          try {
+            await saveChatMessage(currentSessionId, user.id, "assistant", assistantText);
+            const projectTitle = data.spec?.project?.name || undefined;
+            await updateSession(currentSessionId, { spec: data.spec, title: projectTitle });
+            if (projectTitle) {
+              updateSessionInList(currentSessionId, { spec: data.spec, title: projectTitle });
+            }
+          } catch (err) {
+            console.error("Failed to sync assistant message:", err);
+          }
+        }
       } else {
         // Update existing spec
         setIsProcessing(true, "Updating prototype...");
@@ -83,11 +138,27 @@ export default function BuilderPage() {
         
         const data = await response.json();
         updateSpec(data.spec);
-        addChatMessage({ role: "assistant", content: "I've updated the application based on your instruction." });
+        const assistantText = "I've updated the application based on your instruction.";
+        addChatMessage({ role: "assistant", content: assistantText });
+
+        // Save assistant response and updated spec to Supabase
+        if (user && isConfigured && currentSessionId) {
+          try {
+            await saveChatMessage(currentSessionId, user.id, "assistant", assistantText);
+            await updateSession(currentSessionId, { spec: data.spec });
+            updateSessionInList(currentSessionId, { spec: data.spec });
+          } catch (err) {
+            console.error("Failed to sync updated spec:", err);
+          }
+        }
       }
     } catch (error) {
       console.error(error);
-      addChatMessage({ role: "assistant", content: "Sorry, I encountered an error while processing that." });
+      const errorText = "Sorry, I encountered an error while processing that.";
+      addChatMessage({ role: "assistant", content: errorText });
+      if (user && isConfigured && currentSessionId) {
+        saveChatMessage(currentSessionId, user.id, "assistant", errorText).catch(console.error);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -143,21 +214,42 @@ export default function BuilderPage() {
     <div className="h-screen w-full flex flex-col bg-background text-foreground overflow-hidden">
       {/* Top Navigation */}
       <header className="h-14 border-b flex items-center justify-between px-4 bg-background z-10 shrink-0">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2 font-bold hover:opacity-80 transition-opacity">
             <div className="w-6 h-6 rounded bg-primary flex items-center justify-center text-primary-foreground">
               <Mic className="w-3.5 h-3.5" />
             </div>
-            <span>Bolke Bana</span>
+            <span className="hidden sm:inline">Bolke Bana</span>
           </Link>
+          <div className="h-4 w-px bg-border hidden sm:block" />
+
+          {/* Sessions Drawer Toggle Button */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border bg-background hover:bg-secondary transition-colors"
+            title="View chat sessions"
+          >
+            <History className="w-3.5 h-3.5 text-primary" />
+            <span className="hidden md:inline">Sessions</span>
+          </button>
+
+          <button
+            onClick={startNewSession}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+            title="Start new conversation"
+          >
+            <Plus className="w-3 h-3 text-primary" />
+            <span className="hidden md:inline">New</span>
+          </button>
+
           <div className="h-4 w-px bg-border" />
-          <div className="font-medium text-sm text-muted-foreground">
+          <div className="font-medium text-xs sm:text-sm text-muted-foreground truncate max-w-[140px] sm:max-w-[200px]">
             {spec ? spec.project.name : "Untitled Project"}
           </div>
         </div>
         
         <div className="flex items-center gap-2">
-          <select className="h-8 rounded-md border bg-background px-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+          <select className="h-8 rounded-md border bg-background px-2 sm:px-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
             <option>Hindi</option>
             <option>English</option>
             <option>Hinglish</option>
@@ -168,40 +260,51 @@ export default function BuilderPage() {
             <button 
               onClick={undo}
               disabled={historyIndex <= 0}
-              className="px-3 h-full hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-colors flex items-center justify-center disabled:opacity-50 disabled:hover:bg-transparent" 
+              className="px-2.5 sm:px-3 h-full hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-colors flex items-center justify-center disabled:opacity-50 disabled:hover:bg-transparent" 
               title="Undo"
             >
-              <Undo className="w-4 h-4" />
+              <Undo className="w-3.5 h-3.5" />
             </button>
             <div className="w-px h-full bg-border" />
             <button 
               onClick={redo}
               disabled={historyIndex >= history.length - 1}
-              className="px-3 h-full hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-colors flex items-center justify-center disabled:opacity-50 disabled:hover:bg-transparent" 
+              className="px-2.5 sm:px-3 h-full hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-colors flex items-center justify-center disabled:opacity-50 disabled:hover:bg-transparent" 
               title="Redo"
             >
-              <Redo className="w-4 h-4" />
+              <Redo className="w-3.5 h-3.5" />
             </button>
           </div>
-          <button className="h-8 px-4 rounded-md bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors hidden sm:flex">
+          <button className="h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-secondary/80 transition-colors hidden lg:flex">
             <Play className="w-3.5 h-3.5" />
             Preview
           </button>
-          <button className="h-8 px-4 rounded-md border bg-background text-xs font-medium flex items-center gap-2 hover:bg-accent hover:text-accent-foreground transition-colors hidden sm:flex">
+          <button className="h-8 px-3 rounded-md border bg-background text-xs font-medium flex items-center gap-1.5 hover:bg-accent hover:text-accent-foreground transition-colors hidden lg:flex">
             <Download className="w-3.5 h-3.5" />
             Export
           </button>
+
+          {/* User Auth Profile Menu */}
+          <div className="ml-1">
+            <UserProfileMenu />
+          </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden">
-        
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Left Panel: Conversation */}
         <aside className="w-[320px] md:w-[380px] shrink-0 border-r flex flex-col bg-background relative z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-          <div className="h-10 border-b flex items-center px-4 font-medium text-xs text-muted-foreground uppercase tracking-wider bg-secondary/30 shrink-0">
-            <MessageSquare className="w-3.5 h-3.5 mr-2" />
-            Conversation
+          <div className="h-10 border-b flex items-center justify-between px-4 font-medium text-xs text-muted-foreground uppercase tracking-wider bg-secondary/30 shrink-0">
+            <div className="flex items-center">
+              <MessageSquare className="w-3.5 h-3.5 mr-2" />
+              Conversation
+            </div>
+            {activeSessionId && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-normal capitalize">
+                Synced
+              </span>
+            )}
           </div>
           
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-6 scroll-smooth">
@@ -322,6 +425,12 @@ export default function BuilderPage() {
 
         {/* Right Panel: Blueprint */}
         <BlueprintPanel spec={spec} />
+
+        {/* Session Drawer */}
+        <SessionSidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
       </div>
     </div>
   );

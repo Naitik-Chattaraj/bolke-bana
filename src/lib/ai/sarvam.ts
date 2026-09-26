@@ -1,10 +1,13 @@
 import { AppSpec, AppSpecSchema } from "../schemas/app-spec";
 import { SYSTEM_PROMPT_REQUIREMENTS, SYSTEM_PROMPT_MODIFICATION } from "./prompts";
 
-const SARVAM_API_KEY = process.env.SARVAM_API_KEY || process.env.NEXT_PUBLIC_SARVAM_API_KEY;
+function getApiKey() {
+  return process.env.SARVAM_API_KEY || process.env.NEXT_PUBLIC_SARVAM_API_KEY;
+}
 
 export async function transcribeAudio(audioBlob: Blob): Promise<string> {
-  if (!SARVAM_API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     console.warn("No Sarvam API key found. Using fallback transcription.");
     return fallbackTranscription();
   }
@@ -18,13 +21,15 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
     const response = await fetch("https://api.sarvam.ai/speech-to-text", {
       method: "POST",
       headers: {
-        "api-subscription-key": SARVAM_API_KEY,
+        "api-subscription-key": apiKey,
       },
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Sarvam STT failed: ${response.statusText}`);
+      const errData = await response.json().catch(() => ({}));
+      const errMsg = errData.error?.message || response.statusText;
+      throw new Error(`Sarvam API Error: ${errMsg}`);
     }
 
     const data = await response.json();
@@ -36,7 +41,8 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
 }
 
 export async function extractRequirements(transcript: string): Promise<AppSpec> {
-  if (!SARVAM_API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     console.warn("No Sarvam API key found. Using fallback extraction.");
     return fallbackExtraction();
   }
@@ -46,7 +52,7 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-subscription-key": SARVAM_API_KEY,
+        "api-subscription-key": apiKey,
       },
       body: JSON.stringify({
         model: "sarvam-105b", // Assuming sarvam-105b or latest model
@@ -60,7 +66,9 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
     });
 
     if (!response.ok) {
-      throw new Error(`Sarvam LLM failed: ${response.statusText}`);
+      const errData = await response.json().catch(() => ({}));
+      const errMsg = errData.error?.message || errData.message || response.statusText;
+      throw new Error(`Sarvam LLM failed: ${errMsg}`);
     }
 
     const data = await response.json();
@@ -72,14 +80,15 @@ export async function extractRequirements(transcript: string): Promise<AppSpec> 
     
     const parsed = JSON.parse(jsonString);
     return AppSpecSchema.parse(parsed);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Extraction error:", error);
-    return fallbackExtraction();
+    throw new Error(`Extraction failed: ${error.message}`);
   }
 }
 
 export async function modifyRequirements(currentSpec: AppSpec, instruction: string): Promise<AppSpec> {
-  if (!SARVAM_API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     console.warn("No Sarvam API key found. Using fallback modification.");
     return fallbackModification(currentSpec, instruction);
   }
@@ -89,7 +98,7 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-subscription-key": SARVAM_API_KEY,
+        "api-subscription-key": apiKey,
       },
       body: JSON.stringify({
         model: "sarvam-105b",
@@ -102,7 +111,9 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
     });
 
     if (!response.ok) {
-      throw new Error(`Sarvam LLM failed: ${response.statusText}`);
+      const errData = await response.json().catch(() => ({}));
+      const errMsg = errData.error?.message || errData.message || response.statusText;
+      throw new Error(`Sarvam LLM failed: ${errMsg}`);
     }
 
     const data = await response.json();
@@ -113,9 +124,9 @@ export async function modifyRequirements(currentSpec: AppSpec, instruction: stri
     
     const parsed = JSON.parse(jsonString);
     return AppSpecSchema.parse(parsed);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Modification error:", error);
-    return fallbackModification(currentSpec, instruction);
+    throw new Error(`Modification failed: ${error.message}`);
   }
 }
 
